@@ -1,70 +1,82 @@
 const WebSocket = require('ws');
 const net = require('net');
 
-// Get port from Render (they provide it automatically)
-const PORT = process.env.PORT || 8080;
+// Render provides the port automatically
+const PORT = process.env.PORT || 10000; // ← USE 10000 NOT 8080
 
 const MC_HOST = '147.135.104.179';
 const MC_PORT = 15014;
 
-console.log(`🎮 Starting on port ${PORT}`);
-console.log(`📡 Target: ${MC_HOST}:${MC_PORT}`);
+console.log(`🎮 Starting on Render WebSocket port: ${PORT}`);
+console.log(`📡 Target Minecraft: ${MC_HOST}:${MC_PORT}`);
 
-// WebSocket server
 const wss = new WebSocket.Server({ 
   port: PORT,
-  perMessageDeflate: false
+  perMessageDeflate: false,
+  clientTracking: true
 });
 
 wss.on('connection', (ws, req) => {
-  console.log('🔗 Client connected from:', req.socket.remoteAddress);
+  const clientIp = req.socket.remoteAddress;
+  console.log(`🔗 Eaglercraft connected from: ${clientIp}`);
   
-  // Create TCP connection to your Minecraft server
-  const tcpSocket = net.createConnection({
+  // Send immediate response
+  ws.send(JSON.stringify({
+    type: 'handshake',
+    status: 'proxy_ready',
+    message: 'Eaglercraft proxy connected'
+  }));
+  
+  // THEN try Minecraft connection
+  const mcSocket = net.createConnection({
     host: MC_HOST,
     port: MC_PORT
   }, () => {
-    console.log('✅ Connected to Minecraft server');
-    ws.send(JSON.stringify({ type: 'connected', status: 'success' }));
+    console.log(`✅ Connected to Minecraft server`);
+    ws.send(JSON.stringify({
+      type: 'handshake', 
+      status: 'minecraft_connected',
+      message: 'Ready to play!'
+    }));
   });
   
-  // Forward WebSocket → TCP
+  // Forward WebSocket ↔ TCP
   ws.on('message', (data) => {
-    if (tcpSocket.writable) {
-      tcpSocket.write(data);
+    if (mcSocket.writable) {
+      mcSocket.write(data);
+      console.log(`📨 WS→MC: ${data.length} bytes`);
     }
   });
   
-  // Forward TCP → WebSocket
-  tcpSocket.on('data', (data) => {
+  mcSocket.on('data', (data) => {
     if (ws.readyState === ws.OPEN) {
       ws.send(data);
+      console.log(`📨 MC→WS: ${data.length} bytes`);
     }
   });
   
   // Cleanup
   ws.on('close', () => {
-    console.log('❌ WebSocket closed');
-    tcpSocket.end();
+    console.log(`❌ Eaglercraft disconnected`);
+    mcSocket.end();
   });
   
-  tcpSocket.on('close', () => {
-    console.log('❌ TCP connection closed');
-    if (ws.readyState === ws.OPEN) {
-      ws.close();
-    }
+  mcSocket.on('close', () => {
+    console.log(`❌ Minecraft connection closed`);
+    if (ws.readyState === ws.OPEN) ws.close();
   });
   
-  tcpSocket.on('error', (err) => {
-    console.log('❌ TCP error:', err.message);
+  mcSocket.on('error', (err) => {
+    console.log(`❌ Minecraft error: ${err.code}`);
     ws.close();
   });
   
   ws.on('error', (err) => {
-    console.log('❌ WebSocket error:', err.message);
-    tcpSocket.end();
+    console.log(`❌ WebSocket error: ${err.message}`);
+    mcSocket.end();
   });
 });
 
-console.log(`✅ WebSocket server running on port ${PORT}`);
-console.log(`👉 Eaglercraft should connect to: wss://eaglercraft-proxy-m4kx.onrender.com`);
+console.log(`✅ Proxy ready!`);
+console.log(`👉 Eaglercraft URL: wss://eaglercraft-proxy-m4kx.onrender.com`);
+console.log(`👉 Actual port: ${PORT}`);
