@@ -1,0 +1,12 @@
+servers:
+  main:
+    address: 147.135.104.179:15014
+    motd: "Cybrancee Server"
+    restricted: false
+
+listeners:
+- host: 0.0.0.0:25565
+  motd: "Eaglercraft Proxy"
+  priorities: [main]
+
+online_mode: false
